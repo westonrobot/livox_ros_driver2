@@ -21,11 +21,6 @@ if($ENV{ROS_VERSION} STREQUAL "1")
   #---------------------------------------------------------------------------------------
   # find package and the dependecy
   #---------------------------------------------------------------------------------------
-  find_package(Boost 1.54 REQUIRED COMPONENTS
-    system
-    thread
-    chrono
-  )
 
   ## Find catkin macros and libraries
   ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -158,7 +153,6 @@ if($ENV{ROS_VERSION} STREQUAL "1")
   #---------------------------------------------------------------------------------------
   target_link_libraries(${PROJECT_NAME}_node
     ${LIVOX_LIDAR_SDK_LIBRARY}
-    ${Boost_LIBRARY}
     ${catkin_LIBRARIES}
     ${PCL_LIBRARIES}
     ${APR_LIBRARIES}
@@ -207,34 +201,21 @@ else($ENV{ROS_VERSION} STREQUAL "2")
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
   endif()
 
-  # Printf version info
-  include(cmake/version.cmake)
-  project(${PROJECT_NAME} VERSION ${LIVOX_ROS_DRIVER2_VERSION} LANGUAGES CXX)
-  message(STATUS "${PROJECT_NAME} version: ${LIVOX_ROS_DRIVER2_VERSION}")
-
   #---------------------------------------------------------------------------------------
   # Add ROS Version MACRO
   #---------------------------------------------------------------------------------------
   add_definitions(-DBUILDING_ROS2)
 
   # find dependencies
-  # uncomment the following section in order to fill in
-  # further dependencies manually.
-  # find_package(<dependency> REQUIRED)
-  find_package(ament_cmake_auto REQUIRED)
-  ament_auto_find_build_dependencies()
-  find_package(PCL REQUIRED)
+  find_package(ament_cmake REQUIRED)
+  find_package(rclcpp REQUIRED)
+  find_package(rclcpp_components REQUIRED)
+  find_package(pcl_ros REQUIRED)
+#   find_package(pcl_conversions REQUIRED)
   find_package(std_msgs REQUIRED)
+  find_package(sensor_msgs REQUIRED)
   find_package(builtin_interfaces REQUIRED)
   find_package(rosidl_default_generators REQUIRED)
-
-  # check apr
-  find_package(PkgConfig)
-  pkg_check_modules(APR apr-1)
-  if (APR_FOUND)
-    message(${APR_INCLUDE_DIRS})
-    message(${APR_LIBRARIES})
-  endif (APR_FOUND)
 
   # generate custom msg headers
   set(LIVOX_INTERFACES livox_interfaces2)
@@ -247,18 +228,12 @@ else($ENV{ROS_VERSION} STREQUAL "2")
 
   ## make sure the livox_lidar_sdk_shared library is installed
   find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so /usr/local/lib REQUIRED)
-
-  ##
   find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
     NAMES "livox_lidar_api.h" "livox_lidar_def.h"
     REQUIRED)
 
-  ## PCL library
-  link_directories(${PCL_LIBRARY_DIRS})
-  add_definitions(${PCL_DEFINITIONS})
-
   # livox ros2 driver target
-  ament_auto_add_library(${PROJECT_NAME} SHARED
+  add_library(${PROJECT_NAME} SHARED
     src/livox_ros_driver2.cpp
     src/lddc.cpp
     src/driver_node.cpp
@@ -278,7 +253,11 @@ else($ENV{ROS_VERSION} STREQUAL "2")
     src/call_back/lidar_common_callback.cpp
     src/call_back/livox_lidar_callback.cpp
   )
-
+  ament_target_dependencies(${PROJECT_NAME}
+        rclcpp rclcpp_components 
+        pcl_ros 
+        std_msgs sensor_msgs)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILDING_ROS2")
   target_include_directories(${PROJECT_NAME} PRIVATE ${livox_sdk_INCLUDE_DIRS})
 
   # get include directories of custom msg headers
@@ -292,24 +271,16 @@ else($ENV{ROS_VERSION} STREQUAL "2")
     get_target_property(LIVOX_INTERFACES_INCLUDE_DIRECTORIES ${LIVOX_INTERFACE_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
   endif()
 
-  # include file direcotry
+  target_link_libraries(${PROJECT_NAME}
+    ${LIVOX_LIDAR_SDK_LIBRARY}
+    ${LIVOX_INTERFACE_TARGET}   # for custom msgs
+  )
+
   target_include_directories(${PROJECT_NAME} PUBLIC
-    ${PCL_INCLUDE_DIRS}
-    ${APR_INCLUDE_DIRS}
     ${LIVOX_LIDAR_SDK_INCLUDE_DIR}
     ${LIVOX_INTERFACES_INCLUDE_DIRECTORIES}   # for custom msgs
     3rdparty
     src
-  )
-
-  # link libraries
-  target_link_libraries(${PROJECT_NAME}
-    ${LIVOX_LIDAR_SDK_LIBRARY}
-    ${LIVOX_INTERFACE_TARGET}   # for custom msgs
-    ${PPT_LIBRARY}
-    ${Boost_LIBRARY}
-    ${PCL_LIBRARIES}
-    ${APR_LIBRARIES}
   )
 
   rclcpp_components_register_node(${PROJECT_NAME}
@@ -328,9 +299,19 @@ else($ENV{ROS_VERSION} STREQUAL "2")
     ament_lint_auto_find_test_dependencies()
   endif()
 
-  ament_auto_package(INSTALL_TO_SHARE
-    config
-    launch_ROS2
-  )
+  install(TARGETS
+    ${PROJECT_NAME}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+  install(TARGETS
+    ${PROJECT_NAME}_node
+    DESTINATION lib/${PROJECT_NAME})
+
+  install(DIRECTORY config launch_ROS2
+    DESTINATION share/${PROJECT_NAME}/)
+
+  ament_package()
 
 endif()
